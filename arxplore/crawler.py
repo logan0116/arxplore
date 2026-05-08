@@ -14,7 +14,7 @@ import httpx
 import db, embed_client
 
 
-ARXIV_API_BASE = "http://export.arxiv.org/api/query"
+ARXIV_API_BASE = "https://export.arxiv.org/api/query"
 
 
 def now_iso() -> str:
@@ -37,7 +37,7 @@ class Crawler:
         return {"count": count, "total_fetched": len(papers)}
 
     async def _fetch_arxiv(self, query: str, max_results: int) -> list[dict[str, Any]]:
-        url = f"{ARXIV_API_BASE}?search_query={query}&start=0&max_results={max_results}&sortBy=submittedDate&sortOrder=desc"
+        url = f"{ARXIV_API_BASE}?search_query={query}&start=0&max_results={max_results}&sortBy=submittedDate&sortOrder=descending"
         for attempt in range(5):
             try:
                 async with httpx.AsyncClient(timeout=30) as client:
