@@ -33,6 +33,7 @@ htmlcov/
 # Data (local development)
 arxplore/data/*.db
 arxplore/data/qdrant/
+**/arxiv.db
 
 # Logs
 *.log
