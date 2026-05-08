@@ -21,6 +21,23 @@ def now_iso() -> str:
     return datetime.now(timezone.utc).isoformat()
 
 
+def arxiv_id_to_date(arxiv_id: str) -> str:
+    """从 arxiv_id 提取日期，格式如 2605.05208 -> 2026-05-xx"""
+    try:
+        # arxiv_id 格式: YYMM.xxxxx
+        parts = arxiv_id.split(".")
+        if len(parts) >= 2:
+            yymm = parts[0]
+            yy = int(yymm[:2])
+            mm = int(yymm[2:4])
+            # 假设 00-25 是 2000-2025, 26+ 是 2026+
+            year = 2000 + yy if yy <= 25 else 2026 + (yy - 26)
+            return f"{year}-{mm:02d}-01"
+    except (ValueError, IndexError):
+        pass
+    return ""
+
+
 class Crawler:
     def __init__(self, config: dict[str, Any], conn: Any, qdrant: Any):
         self.config = config
@@ -46,9 +63,7 @@ class Crawler:
 
     def _parse_articles(self, html: str) -> list[dict[str, Any]]:
         papers = []
-        # 匹配 <dt>...<dd> 结构
-        # 先找到所有 (dt, dd) 对
-        article_blocks = re.findall(r'<dt>(.*?)</dt>\s*<dd>(.*?)</dd>', html, re.DOTALL)
+        article_blocks = re.findall(r"<dt>(.*?)</dt>\s*<dd>(.*?)</dd>", html, re.DOTALL)
 
         for dt_content, dd_content in article_blocks:
             # 从 <dt> 提取 arxiv_id 和 URL
@@ -59,47 +74,46 @@ class Crawler:
             abs_url = f"https://arxiv.org/abs/{arxiv_id}"
             pdf_url = f"https://arxiv.org/pdf/{arxiv_id}"
 
-            # 从 <dd> 提取标题
-            title_match = re.search(r'<div class=\'list-title[^\']*\'>.*?<span class=\'descriptor\'>:</span>\s*(.*?)</div>', dd_content, re.DOTALL)
+            # 提取标题
+            title_match = re.search(r"Title:</span>\s+(.+?)\s+</div>", dd_content, re.DOTALL)
             title = title_match.group(1).strip() if title_match else ""
-            title = re.sub(r'\s+', ' ', title)
+            title = re.sub(r"\s+", " ", title)
 
             # 提取作者
-            authors_match = re.search(r'<div class=\'list-authors\'>(.*?)</div>', dd_content, re.DOTALL)
+            authors_match = re.search(r'<div class="list-authors">(.*?)</div>', dd_content, re.DOTALL)
             authors = ""
             if authors_match:
-                author_names = re.findall(r'query=([^"&]+)', authors_match.group(1))
+                author_names = re.findall(r"query=([^&\"&;]+)", authors_match.group(1))
                 authors = ", ".join(name.replace("+", " ") for name in author_names)
 
             # 提取分类
-            subjects_match = re.search(r'<div class=\'list-subjects\'>(.*?)</div>', dd_content, re.DOTALL)
+            subjects_match = re.search(r'<div class="list-subjects">(.*?)</div>', dd_content, re.DOTALL)
             categories = ""
             if subjects_match:
-                cats = re.findall(r'>\s*([^<]+?)\s*\(([^)]+)\)', subjects_match.group(1))
+                cats = re.findall(r">\s*([^<]+?)\s*\(([^)]+)\)", subjects_match.group(1))
                 categories = ", ".join(f"{name.strip()} ({abbr})" for name, abbr in cats)
-                primary_cat = re.search(r'class="primary-subject">([^<]+)', subjects_match.group(1))
-                primary = primary_cat.group(1).strip() if primary_cat else ""
 
             # 提取摘要
-            abstract_match = re.search(r'<p class=\'mathjax\'>(.*?)</p>', dd_content, re.DOTALL)
+            abstract_match = re.search(r'<p class="mathjax">(.*?)</p>', dd_content, re.DOTALL)
             abstract = abstract_match.group(1).strip() if abstract_match else ""
-            abstract = re.sub(r'\s+', ' ', abstract)
-            abstract = re.sub(r'&#39;', "'", abstract)
-            abstract = re.sub(r'&amp;', '&', abstract)
-            abstract = re.sub(r'&lt;', '<', abstract)
-            abstract = re.sub(r'&gt;', '>', abstract)
+            abstract = re.sub(r"\s+", " ", abstract)
+            abstract = re.sub(r"&#39;", "'", abstract)
+            abstract = re.sub(r"&amp;", "&", abstract)
+            abstract = re.sub(r"&lt;", "<", abstract)
+            abstract = re.sub(r"&gt;", ">", abstract)
 
-            # 提取日期（来自 dt 中的日期信息）
-            date_match = re.search(r'Submitted on ([^;]+)', dd_content)
+            # 提取日期（优先从 HTML，失败则从 arxiv_id 推断）
             published_date = ""
+            date_match = re.search(r"Submitted on ([^;<]+)", dd_content)
             if date_match:
-                date_str = date_match.group(1).strip()
-                # 格式: "6 May 2025"
+                date_str = date_match.group(1).strip().rstrip(")")
                 try:
-                    dt = datetime.strptime(date_str, "%d %b %Y")
-                    published_date = dt.strftime("%Y-%m-%d")
+                    dt_obj = datetime.strptime(date_str, "%d %b %Y")
+                    published_date = dt_obj.strftime("%Y-%m-%d")
                 except ValueError:
-                    published_date = ""
+                    published_date = arxiv_id_to_date(arxiv_id)
+            else:
+                published_date = arxiv_id_to_date(arxiv_id)
 
             papers.append({
                 "arxiv_id": arxiv_id,
@@ -134,6 +148,9 @@ class Crawler:
         for paper in to_store:
             db.insert_paper(self.conn, paper)
 
-        self.qdrant.upsert_papers(to_store)
+        try:
+            self.qdrant.upsert_papers(to_store)
+        except Exception as e:
+            print(f"Qdrant upsert failed: {e}")
 
         return len(to_store)
