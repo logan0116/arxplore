@@ -19,6 +19,7 @@ scheduler:
 arxiv:
   max_results: 2000
   rate_limit_seconds: 10
+  batch_size: 64
 
 app:
   host: "0.0.0.0"

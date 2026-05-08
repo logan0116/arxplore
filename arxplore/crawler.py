@@ -46,10 +46,11 @@ class Crawler:
         self.arxiv_config = config["arxiv"]
         self.rate_limit = self.arxiv_config.get("rate_limit_seconds", 10)
         self.max_results = self.arxiv_config.get("max_results", 200)
+        self.batch_size = self.arxiv_config.get("batch_size", 64)
         self.conn = conn
         self.qdrant = qdrant
         self.embed = embed_client.EmbedClient.from_config(config)
-        logger.info(f"Crawler 初始化: max_results={self.max_results}")
+        logger.info(f"Crawler 初始化: max_results={self.max_results}, batch_size={self.batch_size}")
 
     async def run(self) -> dict[str, Any]:
         logger.info("=" * 50)
@@ -74,7 +75,7 @@ class Crawler:
         logger.info(f"限制采集数量: {len(papers)} 篇")
 
         try:
-            count = await self._embed_and_store(papers)
+            count = await self._embed_and_store(papers, batch_size=self.batch_size)
             logger.info(f"采集完成，入库 {count} 篇论文")
         except Exception as e:
             logger.error(f"存储失败: {e}")
@@ -154,22 +155,32 @@ class Crawler:
 
         return papers
 
-    async def _embed_and_store(self, papers: list[dict[str, Any]]) -> int:
+    async def _embed_and_store(self, papers: list[dict[str, Any]], batch_size: int = 64) -> int:
         if not papers:
             logger.warning("待存储论文列表为空")
             return 0
 
-        logger.info(f"开始向量化 {len(papers)} 篇论文...")
-        try:
-            texts = [f"{p['title']} {p['abstract']}" for p in papers]
-            vectors = await self.embed.encode_documents(texts)
-            logger.info(f"向量化完成，获取 {len(vectors)} 个向量")
-        except Exception as e:
-            logger.error(f"批量向量化失败: {e}")
-            raise CrawlerError(ErrorCode.CRAWLER_EMBED_FAILED, "批量向量化失败", str(e))
+        total = len(papers)
+        logger.info(f"开始向量化 {total} 篇论文（batch_size={batch_size}）...")
+
+        all_vectors = []
+        for i in range(0, total, batch_size):
+            batch = papers[i:i + batch_size]
+            batch_num = i // batch_size + 1
+            total_batches = (total + batch_size - 1) // batch_size
+            logger.info(f"向量化第 {batch_num}/{total_batches} 批，数量: {len(batch)}")
+            try:
+                texts = [f"{p['title']} {p['abstract']}" for p in batch]
+                vectors = await self.embed.encode_documents(texts)
+                all_vectors.extend(vectors)
+            except Exception as e:
+                logger.error(f"批量向量化失败 [{batch_num}/{total_batches}]: {e}")
+                raise CrawlerError(ErrorCode.CRAWLER_EMBED_FAILED, f"批量向量化失败: {e}", str(e))
+
+        logger.info(f"向量化完成，获取 {len(all_vectors)} 个向量")
 
         to_store = []
-        for paper, vector in zip(papers, vectors):
+        for paper, vector in zip(papers, all_vectors):
             ts = now_iso()
             paper["vector"] = vector
             paper["created_at"] = ts

@@ -34,6 +34,7 @@ htmlcov/
 arxplore/data/*.db
 arxplore/data/qdrant/
 **/arxiv.db
+data/*
 
 # Logs
 *.log
