@@ -1,11 +1,11 @@
-# qdrant
-docker run \
-  -d \
-  --restart=always \
-  --name qdrant_server \
-  -p 6333:6333 \
-  -v ${PWD}/data/qdrant:/qdrant/storage \
-  qdrant/qdrant:v1.17
+# # qdrant
+# docker run \
+#   -d \
+#   --restart=always \
+#   --name qdrant_server \
+#   -p 6333:6333 \
+#   -v ${PWD}/data/qdrant:/qdrant/storage \
+#   qdrant/qdrant:v1.17
 
 
 docker run \

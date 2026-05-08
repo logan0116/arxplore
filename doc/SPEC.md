@@ -286,15 +286,12 @@ def search(
 **职责**：从 arXiv 获取数据，经过 embedding 后入库。
 
 **采集策略**：
-- 直接从 `cat:cs` 查询最新 CS 论文，每次最多 `max_results` 篇
+- 直接从 `https://arxiv.org/list/cs/new` 解析 HTML 页面，一次请求获取全部元数据（标题、作者、摘要、分类）
 
 **流程**：
 ```
-fetch_from_arxiv(cat:cs) → embed() → insert_to_sqlite() + upsert_to_qdrant()
+fetch_html() → parse_articles() → embed() → insert_to_sqlite() + upsert_to_qdrant()
 ```
-
-**速率控制**：
-- 指数退避重试（base=2, max=120s, max_retries=5）
 
 ### 5.6 router.py
 
