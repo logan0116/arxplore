@@ -16,5 +16,5 @@ docker run \
   --shm-size 32G \
   -v ${PWD}/arxplore:/arxplore \
   -w /arxplore \
-  iss/baseenv:v1.12 \
-  python3 main.py
+  iss/baseenv:v1.12
+  # python3 main.py
