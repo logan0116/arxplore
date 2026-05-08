@@ -1,0 +1,7 @@
+fastapi>=0.100
+uvicorn>=0.23
+httpx>=0.25
+pydantic>=2.0
+PyYAML>=6.0
+apscheduler>=3.10
+qdrant-client>=1.7

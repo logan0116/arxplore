@@ -1,0 +1,25 @@
+database:
+  path: "./arxplore/data/arxiv.db"
+
+qdrant:
+  host: "localhost"
+  port: 6333
+  collection: "arxiv_papers"
+  vector_size: 1024
+
+embedding:
+  base_url: "http://192.168.1.116:9000"
+  timeout: 30
+  default_prompt: "Given a web search query, retrieve relevant passages that answer the query"
+
+scheduler:
+  enabled: true
+  hour: 3
+
+arxiv:
+  max_results: 200
+  rate_limit_seconds: 10
+
+app:
+  host: "0.0.0.0"
+  port: 4215
