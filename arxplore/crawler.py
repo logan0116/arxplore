@@ -10,6 +10,7 @@ from datetime import datetime, timezone
 from typing import Any
 
 import httpx
+from bs4 import BeautifulSoup
 
 import db, embed_client
 
@@ -22,15 +23,13 @@ def now_iso() -> str:
 
 
 def arxiv_id_to_date(arxiv_id: str) -> str:
-    """从 arxiv_id 提取日期，格式如 2605.05208 -> 2026-05-xx"""
+    """从 arxiv_id 提取日期，格式如 2605.05208 -> 2026-05-01"""
     try:
-        # arxiv_id 格式: YYMM.xxxxx
         parts = arxiv_id.split(".")
         if len(parts) >= 2:
             yymm = parts[0]
             yy = int(yymm[:2])
             mm = int(yymm[2:4])
-            # 假设 00-25 是 2000-2025, 26+ 是 2026+
             year = 2000 + yy if yy <= 25 else 2026 + (yy - 26)
             return f"{year}-{mm:02d}-01"
     except (ValueError, IndexError):
@@ -62,58 +61,55 @@ class Crawler:
             return response.text
 
     def _parse_articles(self, html: str) -> list[dict[str, Any]]:
+        soup = BeautifulSoup(html, "html.parser")
         papers = []
-        article_blocks = re.findall(r"<dt>(.*?)</dt>\s*<dd>(.*?)</dd>", html, re.DOTALL)
 
-        for dt_content, dd_content in article_blocks:
-            # 从 <dt> 提取 arxiv_id 和 URL
-            id_match = re.search(r'href\s*=\s*["\']/abs/([^"\']+)["\']', dt_content)
-            if not id_match:
+        for dt in soup.find_all("dt"):
+            # 提取 arxiv_id
+            link = dt.find("a", href=re.compile(r"^/abs/"))
+            if not link:
                 continue
-            arxiv_id = id_match.group(1)
+            arxiv_id = link.get_text(strip=True).replace("arXiv:", "")
             abs_url = f"https://arxiv.org/abs/{arxiv_id}"
             pdf_url = f"https://arxiv.org/pdf/{arxiv_id}"
 
-            # 提取标题
-            title_match = re.search(r"Title:</span>\s+(.+?)\s+</div>", dd_content, re.DOTALL)
-            title = title_match.group(1).strip() if title_match else ""
+            dd = dt.find_next_sibling("dd")
+            if not dd:
+                continue
+
+            # 提取标题（移除 "Title:" 前缀）
+            title_elem = dd.find("div", class_="list-title")
+            title = ""
+            if title_elem:
+                title = title_elem.get_text(strip=True)
+                if title.startswith("Title:"):
+                    title = title[6:].strip()
             title = re.sub(r"\s+", " ", title)
 
             # 提取作者
-            authors_match = re.search(r'<div class="list-authors">(.*?)</div>', dd_content, re.DOTALL)
+            authors_elem = dd.find("div", class_="list-authors")
             authors = ""
-            if authors_match:
-                author_names = re.findall(r"query=([^&\"&;]+)", authors_match.group(1))
-                authors = ", ".join(name.replace("+", " ") for name in author_names)
+            if authors_elem:
+                author_links = authors_elem.find_all("a", href=re.compile(r"searchtype=author"))
+                authors = ", ".join(a.get_text(strip=True) for a in author_links)
 
-            # 提取分类
-            subjects_match = re.search(r'<div class="list-subjects">(.*?)</div>', dd_content, re.DOTALL)
+            # 提取分类（移除 "Subjects:" 前缀）
+            subjects_elem = dd.find("div", class_="list-subjects")
             categories = ""
-            if subjects_match:
-                cats = re.findall(r">\s*([^<]+?)\s*\(([^)]+)\)", subjects_match.group(1))
-                categories = ", ".join(f"{name.strip()} ({abbr})" for name, abbr in cats)
+            if subjects_elem:
+                spans = subjects_elem.find_all("span")
+                cat_texts = [s.get_text(strip=True) for s in spans]
+                if cat_texts and cat_texts[0] == "Subjects:":
+                    cat_texts = cat_texts[1:]
+                categories = ", ".join(cat_texts)
 
             # 提取摘要
-            abstract_match = re.search(r'<p class="mathjax">(.*?)</p>', dd_content, re.DOTALL)
-            abstract = abstract_match.group(1).strip() if abstract_match else ""
+            abstract_elem = dd.find("p", class_="mathjax")
+            abstract = abstract_elem.get_text(strip=True) if abstract_elem else ""
             abstract = re.sub(r"\s+", " ", abstract)
-            abstract = re.sub(r"&#39;", "'", abstract)
-            abstract = re.sub(r"&amp;", "&", abstract)
-            abstract = re.sub(r"&lt;", "<", abstract)
-            abstract = re.sub(r"&gt;", ">", abstract)
 
-            # 提取日期（优先从 HTML，失败则从 arxiv_id 推断）
-            published_date = ""
-            date_match = re.search(r"Submitted on ([^;<]+)", dd_content)
-            if date_match:
-                date_str = date_match.group(1).strip().rstrip(")")
-                try:
-                    dt_obj = datetime.strptime(date_str, "%d %b %Y")
-                    published_date = dt_obj.strftime("%Y-%m-%d")
-                except ValueError:
-                    published_date = arxiv_id_to_date(arxiv_id)
-            else:
-                published_date = arxiv_id_to_date(arxiv_id)
+            # 日期：从 arxiv_id 推断
+            published_date = arxiv_id_to_date(arxiv_id)
 
             papers.append({
                 "arxiv_id": arxiv_id,

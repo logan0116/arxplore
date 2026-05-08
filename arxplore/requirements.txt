@@ -5,3 +5,4 @@ pydantic>=2.0
 PyYAML>=6.0
 apscheduler>=3.10
 qdrant-client>=1.7
+beautifulsoup4>=4.12
