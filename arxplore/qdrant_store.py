@@ -55,9 +55,9 @@ class QdrantStore:
         logger.info(f"开始 upsert {len(papers)} 篇论文到 Qdrant")
         try:
             points = []
-            for paper in papers:
+            for idx, paper in enumerate(papers):
                 aid = paper["arxiv_id"]
-                point_id = hashlib.sha256(aid.encode()).hexdigest()[:16]
+                point_id = idx + 1  # 使用整数作为 point ID
                 vector = paper.get("vector", [0.0] * self.vector_size)
                 payload = {
                     "arxiv_id": aid,
@@ -106,14 +106,14 @@ class QdrantStore:
         search_filter = Filter(must=must_clauses) if must_clauses else None
 
         try:
-            results = self._client.search(
+            results = self._client.query_points(
                 collection_name=self.collection_name,
-                query_vector=query_vector,
+                query=query_vector,
                 query_filter=search_filter,
                 limit=limit + offset,
             )
             parsed = []
-            for hit in results[offset : offset + limit]:
+            for hit in results.points[offset : offset + limit]:
                 parsed.append({
                     "arxiv_id": hit.payload["arxiv_id"],
                     "title": hit.payload.get("title", ""),

@@ -3,6 +3,8 @@ retriever.py — 混合检索编排
 
 提供 search() 函数，协调 FTS5 全文检索 + Qdrant 语义检索 + RRF 融合。
 """
+import asyncio
+import concurrent.futures
 from collections import defaultdict
 from typing import Any, Optional
 
@@ -101,12 +103,15 @@ def search(
 
     # ---- 语义检索 ----
     if semantic_query:
-        import asyncio
-        loop = asyncio.new_event_loop()
-        query_vector = loop.run_until_complete(
-            embed.encode_query(semantic_query)
-        )
-        loop.close()
+        def _run_async():
+            loop = asyncio.new_event_loop()
+            asyncio.set_event_loop(loop)
+            try:
+                return loop.run_until_complete(embed.encode_query(semantic_query))
+            finally:
+                loop.close()
+        with concurrent.futures.ThreadPoolExecutor() as executor:
+            query_vector = executor.submit(_run_async).result()
 
         semantic_results = qdrant.search_semantic(
             query_vector,

@@ -48,27 +48,27 @@ class EmbedClient:
     async def encode_documents(self, texts: list[str]) -> list[list[float]]:
         logger.info(f"开始向量化文档，数量: {len(texts)}")
         try:
-            client = await self._get_client()
-            payload = {
-                "embed_type": "document",
-                "items": texts,
-            }
-            response = await client.post(
-                f"{self.base_url}/api/get_embedding",
-                json=payload,
-            )
-            data = response.json()
-            if data.get("code") != 200:
-                msg = data.get("msg", "Unknown error")
-                logger.error(f"文档向量化失败: [{data.get('code')}] {msg}")
-                raise EmbedError(
-                    ErrorCode.EMBED_ENCODE_DOCS_FAILED,
-                    f"文档向量化失败: {msg}",
-                    f"code={data.get('code')}",
+            async with httpx.AsyncClient(timeout=self.timeout) as client:
+                payload = {
+                    "embed_type": "document",
+                    "items": texts,
+                }
+                response = await client.post(
+                    f"{self.base_url}/api/get_embedding",
+                    json=payload,
                 )
-            result = data.get("data", [])
-            logger.info(f"文档向量化完成，返回 {len(result)} 个向量")
-            return result
+                data = response.json()
+                if data.get("code") != 200:
+                    msg = data.get("msg", "Unknown error")
+                    logger.error(f"文档向量化失败: [{data.get('code')}] {msg}")
+                    raise EmbedError(
+                        ErrorCode.EMBED_ENCODE_DOCS_FAILED,
+                        f"文档向量化失败: {msg}",
+                        f"code={data.get('code')}",
+                    )
+                result = data.get("data", [])
+                logger.info(f"文档向量化完成，返回 {len(result)} 个向量")
+                return result
         except httpx.TimeoutException as e:
             logger.error(f"文档向量化超时: {e}")
             raise EmbedError(ErrorCode.EMBED_TIMEOUT, "文档向量化超时", str(e))
@@ -84,32 +84,32 @@ class EmbedClient:
     ) -> list[float]:
         logger.debug(f"开始向量化查询: '{query[:50]}...'")
         try:
-            client = await self._get_client()
-            use_prompt = prompt or self.default_prompt
-            payload = {
-                "embed_type": "query",
-                "prompt": use_prompt,
-                "items": [query],
-            }
-            response = await client.post(
-                f"{self.base_url}/api/get_embedding",
-                json=payload,
-            )
-            data = response.json()
-            if data.get("code") != 200:
-                msg = data.get("msg", "Unknown error")
-                logger.error(f"查询向量化失败: [{data.get('code')}] {msg}")
-                raise EmbedError(
-                    ErrorCode.EMBED_ENCODE_QUERY_FAILED,
-                    f"查询向量化失败: {msg}",
-                    f"code={data.get('code')}",
+            async with httpx.AsyncClient(timeout=self.timeout) as client:
+                use_prompt = prompt or self.default_prompt
+                payload = {
+                    "embed_type": "query",
+                    "prompt": use_prompt,
+                    "items": [query],
+                }
+                response = await client.post(
+                    f"{self.base_url}/api/get_embedding",
+                    json=payload,
                 )
-            vectors = data.get("data", [])
-            if not vectors:
-                logger.warning("查询向量化返回空向量")
-                return []
-            logger.debug(f"查询向量化完成，向量维度: {len(vectors[0])}")
-            return vectors[0]
+                data = response.json()
+                if data.get("code") != 200:
+                    msg = data.get("msg", "Unknown error")
+                    logger.error(f"查询向量化失败: [{data.get('code')}] {msg}")
+                    raise EmbedError(
+                        ErrorCode.EMBED_ENCODE_QUERY_FAILED,
+                        f"查询向量化失败: {msg}",
+                        f"code={data.get('code')}",
+                    )
+                vectors = data.get("data", [])
+                if not vectors:
+                    logger.warning("查询向量化返回空向量")
+                    return []
+                logger.debug(f"查询向量化完成，向量维度: {len(vectors[0])}")
+                return vectors[0]
         except httpx.TimeoutException as e:
             logger.error(f"查询向量化超时: {e}")
             raise EmbedError(ErrorCode.EMBED_TIMEOUT, "查询向量化超时", str(e))
