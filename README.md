@@ -108,7 +108,7 @@ curl -X POST http://localhost:4215/arxplore/search \
 | `qdrant.port` | Qdrant 端口 | `6333` |
 | `embedding.base_url` | embedding_server 地址 | `http://192.168.1.116:9000` |
 | `scheduler.hour` | 每日采集时间（小时） | `3` |
-| `arxiv.max_results` | 单次采集上限 | `200` |
+| `arxiv.max_results` | 单次采集上限 | `2000` |
 
 ## 测试
 

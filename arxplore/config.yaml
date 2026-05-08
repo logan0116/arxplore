@@ -17,7 +17,7 @@ scheduler:
   hour: 3
 
 arxiv:
-  max_results: 200
+  max_results: 2000
   rate_limit_seconds: 10
 
 app:
