@@ -4,7 +4,7 @@ ArXiv 文献检索服务，支持关键词全文检索和语义相似度检索�
 
 ## 功能特性
 
-- **混合检索**：关键词 FTS5 全文检索 + Qdrant 语义向量检索 + RRF 融合排序
+- **混合检索**：关键词 FTS5 全文检索 + Qdrant 语义向量检索 + rerank 重排序
 - **定时采集**：每日自动从 arXiv 拉取 CS 分类最新论文
 - **RESTful API**：提供搜索、统计、触发采集等端点
 
@@ -109,6 +109,7 @@ curl -X POST http://localhost:4215/arxplore/search \
 | `embedding.base_url` | embedding_server 地址 | `http://192.168.1.116:9000` |
 | `scheduler.hour` | 每日采集时间（小时） | `3` |
 | `arxiv.max_results` | 单次采集上限 | `2000` |
+| `arxiv.batch_size` | 向量化分批大小 | `64` |
 
 ## 测试
 
