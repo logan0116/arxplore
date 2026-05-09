@@ -125,28 +125,28 @@ class EmbedClient:
     ) -> list[dict[str, Any]]:
         logger.info(f"开始重排序: query='{query[:30]}...', documents={len(documents)}")
         try:
-            client = await self._get_client()
-            payload = {
-                "query": query,
-                "documents": documents,
-                "query_prompt": self.default_prompt,
-            }
-            response = await client.post(
-                f"{self.base_url}/api/get_rank",
-                json=payload,
-            )
-            data = response.json()
-            if data.get("code") != 200:
-                msg = data.get("msg", "Unknown error")
-                logger.error(f"重排序失败: [{data.get('code')}] {msg}")
-                raise EmbedError(
-                    ErrorCode.EMBED_RERANK_FAILED,
-                    f"重排序失败: {msg}",
-                    f"code={data.get('code')}",
+            async with httpx.AsyncClient(timeout=self.timeout) as client:
+                payload = {
+                    "query": query,
+                    "documents": documents,
+                    "query_prompt": self.default_prompt,
+                }
+                response = await client.post(
+                    f"{self.base_url}/api/get_rank",
+                    json=payload,
                 )
-            result = data.get("data", [])
-            logger.info(f"重排序完成，返回 {len(result)} 条结果")
-            return result
+                data = response.json()
+                if data.get("code") != 200:
+                    msg = data.get("msg", "Unknown error")
+                    logger.error(f"重排序失败: [{data.get('code')}] {msg}")
+                    raise EmbedError(
+                        ErrorCode.EMBED_RERANK_FAILED,
+                        f"重排序失败: {msg}",
+                        f"code={data.get('code')}",
+                    )
+                result = data.get("data", [])
+                logger.info(f"重排序完成，返回 {len(result)} 条结果")
+                return result
         except httpx.TimeoutException as e:
             logger.error(f"重排序超时: {e}")
             raise EmbedError(ErrorCode.EMBED_TIMEOUT, "重排序超时", str(e))
