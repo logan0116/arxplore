@@ -182,29 +182,28 @@
 
 ---
 
-### 2.4 retriever.py — RRF 融合
+### 2.4 retriever.py — 混合检索（两路并集 + rerank）
 
 **测试文件**: `tests/test_retriever.py`
 
 > 纯函数单元测试，不依赖外部服务
 
-#### 2.4.1 RRF 融合逻辑
+#### 2.4.1 两路检索逻辑
 
 | ID | 测试项 | 预期结果 |
 |----|--------|---------|
 | T-300 | 单路检索（仅 keyword） | 结果等同于 FTS5 直接结果 |
-| T-301 | 单路检索（仅 semantic） | 结果等同于 Qdrant 直接结果 |
-| T-302 | 双路检索融合（无重复文档） | RRF score 正确 |
-| T-303 | 双路检索融合（有重复文档） | 重复文档 score 叠加，排名提前 |
-| T-304 | k=60 与 k=0 对比 | k=60 时排名差距缩小 |
-| T-305 | limit=5 时仅返回 5 条 | 不超过 limit |
-| T-306 | offset 分页 | 正确跳过前 N 条 |
+| T-301 | 单路检索（仅 semantic_query） | 结果等同于 Qdrant 直接结果 |
+| T-302 | 双路检索（keyword + semantic_query） | FTS5 结果与 Qdrant 结果取并集 |
+| T-303 | 并集后有重复 arxiv_id | 保留唯一记录 |
+| T-304 | limit=5 时仅返回 5 条 | 不超过 limit |
+| T-305 | offset 分页 | 正确跳过前 N 条 |
 
-#### 2.4.2 分页与排序
+#### 2.4.2 rerank 排序
 
 | ID | 测试项 | 预期结果 |
 |----|--------|---------|
-| T-310 | sort_by=relevance（默认） | 按 RRF score 降序 |
+| T-310 | rerank 重排序 | 结果按 rerank score 降序 |
 | T-311 | sort_by=date, sort_order=asc | 按 published_date 升序 |
 | T-312 | sort_by=date, sort_order=desc | 按 published_date 降序 |
 
@@ -219,7 +218,7 @@
 
 | ID | 测试项 | 预期结果 |
 |----|--------|---------|
-| T-330 | RRF 融合结果回填 SQLite | 返回完整 paper 字段（title/authors/abstract...） |
+| T-330 | 混合检索结果回填 SQLite | 返回完整 paper 字段（title/authors/abstract...） |
 
 ---
 
@@ -248,11 +247,11 @@
 | ID | 测试项 | 预期结果 |
 |----|--------|---------|
 | T-500 | 仅 keyword 搜索 | 返回 FTS5 结果 |
-| T-501 | 仅 semantic_query 搜索 | 返回 Qdrant 结果 |
-| T-502 | keyword + semantic_query 混合 | 返回 RRF 融合结果 |
+| T-501 | 仅 semantic_query 搜索 | 返回 Qdrant 结果（keyword 为空时跳过 FTS5） |
+| T-502 | keyword + semantic_query 混合 | 两路并集 + rerank 排序 |
 | T-503 | categories 过滤 | 仅返回指定分类 |
 | T-504 | date_from + date_to 过滤 | 时间范围正确 |
-| T-505 | sort_by=relevance, limit=5 | 按相关度排序，最多 5 条 |
+| T-505 | sort_by=relevance, limit=5 | 按 rerank score 排序，最多 5 条 |
 | T-506 | offset=10 分页 | 跳过前 10 条 |
 | T-507 | 空 keyword 且空 semantic_query | 返回 422 或错误提示 |
 | T-508 | 不存在的分类过滤 | 返回空列表 |
@@ -297,11 +296,11 @@
 | T-610 | 同一文本 encode 两次 | 向量完全一致（deterministic） |
 | T-611 | encode_query 与 encode_documents 维度一致 | 均为 1024 维 |
 
-### 4.3 RRF 与排序
+### 4.3 混合检索与排序
 
 | ID | 测试项 | 预期结果 |
 |----|--------|---------|
-| T-620 | 混合检索结果 relevance 排序 | RRF score 最高的在最前 |
+| T-620 | 混合检索结果 relevance 排序 | rerank score 最高的在最前 |
 | T-621 | 混合检索结果 date 排序 | published_date 最高的在最前 |
 | T-622 | 检索结果包含完整的 paper 字段 | title/authors/abstract/pdf_url/abs_url 均存在 |
 
@@ -376,7 +375,7 @@ pytest tests/test_integration.py -v
 
 | 模块 | 覆盖要求 |
 |------|---------|
-| retriever.py | RRF 融合逻辑 100% 覆盖 |
+| retriever.py | 两路并集 + rerank 逻辑 100% 覆盖 |
 | db.py | FTS5 触发器 + 查询覆盖 90%+ |
 | embed_client.py | 接口映射覆盖 100% |
 | API endpoints | 所有端点 + 参数组合覆盖 |
@@ -393,5 +392,5 @@ pytest tests/test_integration.py -v
 | POST /admin/trigger-fetch 触发采集 | T-520, T-521, T-522 |
 | FTS5 触发器正常工作 | T-060, T-061, T-062 |
 | Qdrant 语义检索延迟 < 100ms | T-120（需性能测试） |
-| RRF 融合正确工作 | T-300, T-301, T-302, T-303 |
+| 两路并集 + rerank 正确工作 | T-302, T-303, T-310 |
 | embed_client 正确调用 | T-200, T-201, T-210, T-220 |

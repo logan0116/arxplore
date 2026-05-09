@@ -8,7 +8,7 @@
 
 **项目名称**：ArXplore — ArXiv 文献检索服务
 
-**核心功能**：每日自动拉取 arXiv 新论文，支持关键词检索、语义相似度检索及混合检索（RRF 融合），并通过 FastAPI 提供 RESTful API 供前端调用。
+**核心功能**：每日自动拉取 arXiv 新论文，支持关键词检索、语义相似度检索及混合检索（rerank 精排），并通过 FastAPI 提供 RESTful API 供前端调用。
 
 **部署目标**：带 NVIDIA GPU 的 Linux 服务器。实施由 Claude Code 按此文档执行。
 
@@ -24,9 +24,9 @@
 ├─────────────────────────────────────────────────────────────┤
 │  retriever.py (混合检索编排)                                  │
 │    ├── keyword_search (FTS5)                                 │
-│    ├── semantic_search (Qdrant)                             │
-│    ├── RRF 融合 (k=60)                                       │
-│    └── 可选：rerank 精排                                      │
+│    ├── semantic_search (Qdrant)                              │
+│    ├── 两路结果并集                                            │
+│    └── rerank 精排 (embedding_server /api/get_rank)          │
 ├──────────┬──────────────────────┬────────────────────────────┤
 │  db.py   │   qdrant_store.py    │  embed_client.py            │
 │ SQLite    │   Qdrant (向量库)   │ embedding_server            │
@@ -247,22 +247,20 @@ class QdrantStore:
 
 ### 5.4 retriever.py
 
-**职责**：混合检索编排，实现 RRF（Reciprocal Rank Fusion）融合，可选 rerank 精排。
+**职责**：混合检索编排，实现两阶段检索 + rerank 精排。
 
-**检索模式**：
-| 场景 | 行为 |
-|------|------|
-| 仅有 keyword | 仅 FTS5 检索 |
-| 仅有 semantic_query | 仅 Qdrant 语义检索 |
-| 两者都有 | 双路并行检索 + RRF 融合（k=60） |
+**第一阶段：检索（两个独立支路，不排序）**
+| 支路 | 输入 | 输出 |
+|------|------|------|
+| 支路1（FTS5） | keyword | 结果A：list[arxiv_id] |
+| 支路2（Qdrant） | keyword + semantic_query（作为 embed prompt） | 结果B：list[{arxiv_id, qdrant_score}] |
 
-**RRF 公式**：
-```
-score(d) = Σ 1 / (k + rank_r(d))
-```
-其中 k=60，`rank_r(d)` 为文档 d 在检索结果列表 r 中的排名（从 1 开始）。
+**第二阶段：排序**
+- A ∪ B 取并集
+- 送入 `/api/get_rank` 重排序（精排 top 20，粗排 20+）
+- 最终按 rerank score 降序返回
 
-**可选精排**：RRF 融合后取 top N 调用 rerank 服务进行 CrossEncoder 精排。
+**语义检索逻辑**：semantic_query 作为 embedding prompt，用于生成 query 向量，而非独立检索。
 
 **接口**：
 
@@ -347,7 +345,7 @@ async def lifespan(app: FastAPI):
 
 | 测试类型 | 覆盖范围 | 说明 |
 |----------|----------|------|
-| 单元测试 | RRF 融合逻辑 | 纯函数，可 mock |
+| 单元测试 | 混合检索逻辑（两路并集 + rerank） | 纯函数，可 mock |
 | 单元测试 | db.py FTS5 查询 | 需临时 SQLite 文件 |
 | 集成测试 | 采集 → 入库 → 检索 | 端到端，需 arXiv mock 或用真实数据 |
 | API 测试 | embedding_server 接口 | 验证 encode_documents/encode_query/rerank 行为（参考 embedding_server 测试套件） |
@@ -400,9 +398,9 @@ arxplore/
 - [ ] `POST /admin/trigger-fetch` 成功触发一次完整采集流程
 - [ ] FTS5 触发器正常工作（插入/更新/删除后索引自动同步）
 - [ ] Qdrant HNSW 索引正确创建，语义检索延迟 < 100ms（1000 条数据）
-- [ ] RRF 融合在双路检索场景下正确工作
+- [ ] 两路检索结果正确并集合并，rerank 精排正常工作
 - [ ] embed_client 正确调用 embedding_server（query/doc 区分、prompt 使用、rerank 解析）
-- [ ] 单元测试覆盖 RRF 融合逻辑和 FTS5 查询
+- [ ] 单元测试覆盖混合检索逻辑和 FTS5 查询
 
 ---
 
