@@ -28,6 +28,7 @@ class Paper(BaseModel):
     source: str
     created_at: Optional[str] = None
     updated_at: Optional[str] = None
+    rerank_score: Optional[float] = None
 
 
 class SearchResponse(BaseModel):
